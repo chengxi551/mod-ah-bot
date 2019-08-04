@@ -375,6 +375,23 @@ void AuctionHouseBot::addNewAuctions(Player *AHBplayer, AHBConfig *config)
             uint64 bidPrice = 0;
             uint32 stackCount = 1;
 
+            // 优先使用买价
+
+            if (prototype->BuyPrice == 0 && prototype->SellPrice ==0 )
+            {
+                if (debug_Out) sLog->outError("AHSeller: item have no price is %u %s", prototype->ItemId, prototype->Name1.c_str());
+                continue;
+            }
+            else if (prototype->BuyPrice > prototype->SellPrice)
+            {
+                buyoutPrice = prototype->BuyPrice;
+            }
+            else
+            {
+                buyoutPrice = prototype->SellPrice;
+            }
+
+            /*
             switch (SellMethod)
             {
             case 0:
@@ -383,6 +400,17 @@ void AuctionHouseBot::addNewAuctions(Player *AHBplayer, AHBConfig *config)
             case 1:
                 buyoutPrice  = prototype->BuyPrice;
                 break;
+            }*/
+
+            // 适当放大交易商品和附魔材料价格 
+            if (prototype->Class == ITEM_CLASS_TRADE_GOODS)
+            {
+                buyoutPrice *= urand(100, 300);
+                buyoutPrice /= 100;
+            }
+            else if (prototype->Class == ITEM_CLASS_GLYPH)
+            {
+                buyoutPrice *= urand(50, 80);
             }
 
             if (prototype->Quality <= AHB_MAX_QUALITY)
@@ -406,8 +434,10 @@ void AuctionHouseBot::addNewAuctions(Player *AHBplayer, AHBConfig *config)
                 continue;
             }
 
-            uint32 etime = urand(1,3);
-            switch(etime)
+            // 缩短过期时间，增加刷新频率 
+            uint32 etime = 600;
+            //uint32 etime = urand(1,3);
+            /*switch(etime)
             {
             case 1:
                 etime = 43200;
@@ -421,7 +451,7 @@ void AuctionHouseBot::addNewAuctions(Player *AHBplayer, AHBConfig *config)
             default:
                 etime = 86400;
                 break;
-            }
+            }*/
             item->SetCount(stackCount);
 
             uint32 dep =  sAuctionMgr->GetAuctionDeposit(ahEntry, etime, item, stackCount);
@@ -791,7 +821,9 @@ void AuctionHouseBot::Initialize()
     if (AHBSeller)
     {
         QueryResult results = QueryResult(NULL);
-        char npcQuery[] = "SELECT distinct item FROM npc_vendor";
+        // 优化从商人出售获取物品 
+        char npcQuery[] = "SELECT DISTINCT item FROM npc_vendor a, item_template b WHERE a.Item=b.entry AND b.bonding<>1 AND (b.class=9 OR b.Quality>1)";
+        // char npcQuery[] = "SELECT distinct item FROM npc_vendor";
         results = WorldDatabase.Query(npcQuery);
         if (results)
         {
@@ -807,16 +839,18 @@ void AuctionHouseBot::Initialize()
             if (debug_Out) sLog->outError( "AuctionHouseBot: \"%s\" failed", npcQuery);
         }
 
-        char lootQuery[] = "SELECT item FROM creature_loot_template UNION "
-            "SELECT item FROM reference_loot_template UNION "
-            "SELECT item FROM disenchant_loot_template UNION "
-            "SELECT item FROM fishing_loot_template UNION "
-            "SELECT item FROM gameobject_loot_template UNION "
+        char lootQuery[] = "SELECT DISTINCT item FROM creature_loot_template UNION "
+            //"SELECT item FROM reference_loot_template UNION "
+            //"SELECT item FROM disenchant_loot_template WHERE Reference=0 UNION "
+            //"SELECT item FROM fishing_loot_template UNION "
+            //"SELECT item FROM gameobject_loot_template UNION "
             "SELECT item FROM item_loot_template UNION "
-            "SELECT item FROM milling_loot_template UNION "
-            "SELECT item FROM pickpocketing_loot_template UNION "
+            //"SELECT item FROM milling_loot_template UNION "
+            //"SELECT item FROM pickpocketing_loot_template UNION "
             "SELECT item FROM prospecting_loot_template UNION "
-            "SELECT item FROM skinning_loot_template";
+            "SELECT item FROM skinning_loot_template UNION "
+            //"SELECT item FROM spell_loot_template UNION "
+            "SELECT id FROM auctionhousebotitem";
 
         results = WorldDatabase.Query(lootQuery);
         if (results)
@@ -836,8 +870,11 @@ void AuctionHouseBot::Initialize()
         ItemTemplateContainer const* its = sObjectMgr->GetItemTemplateStore();
         for (ItemTemplateContainer::const_iterator itr = its->begin(); itr != its->end(); ++itr)
         {
+            
+            if (itr->second.ItemId == 41380) {
 
-
+                sLog->outError("AuctionHouseBot: ITEM_CLASS_GLYPH)");
+            }
 
             switch (itr->second.Bonding)
             {
@@ -866,6 +903,8 @@ void AuctionHouseBot::Initialize()
                 break;
             }
 
+            // 附魔粉尘没有卖价，后面判断 
+            /*
             switch (SellMethod)
             {
             case 0:
@@ -876,7 +915,7 @@ void AuctionHouseBot::Initialize()
                 if (itr->second.BuyPrice == 0)
                     continue;
                 break;
-            }
+            }*/
 
             if (itr->second.Quality > 6)
                 continue;
@@ -1244,7 +1283,9 @@ void AuctionHouseBot::Initialize()
                 break;
 
             case AHB_WHITE:
-                if (itr->second.Class == ITEM_CLASS_TRADE_GOODS)
+                if (itr->second.Class == ITEM_CLASS_WEAPON || itr->second.Class == ITEM_CLASS_ARMOR)
+                    continue;
+                else if (itr->second.Class == ITEM_CLASS_TRADE_GOODS)
                     whiteTradeGoodsBin.push_back(itr->second.ItemId);
                 else
                     whiteItemsBin.push_back(itr->second.ItemId);
